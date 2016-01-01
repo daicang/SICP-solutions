@@ -1,0 +1,11 @@
+(define (eval-and exp env)
+  (let ((first-exp (car exp))
+	(rest-exp (cdr exp)))
+    (if (last-exp? exp)
+	(eval exp env)
+	(if (eval first-exp env)
+	    (eval-and rest-exp env)
+	    'false))))
+
+(define (last-exp? exp)
+  (null? (cdr exp)))

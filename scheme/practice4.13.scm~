@@ -1,0 +1,11 @@
+(define (make-unbound! var env)
+  (let ((frame (first-frame env)))
+    (define (scan vars vals)
+      (cond ((null? vars)
+	     (error "Unbound variable -- MAKE-UNBOUND" var))
+	    ((eq? (car vars) var)
+	     (set! vars (cdr vars))
+	     (set! vals (cdr vals)))
+	    (else
+	     (scan (cdr vars) (cdr vals)))))
+    (scan frame)))
