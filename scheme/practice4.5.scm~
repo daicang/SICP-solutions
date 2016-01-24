@@ -1,4 +1,0 @@
-(define (cond? exp) (tagged-list? exp 'cond))
-
-(define (cond-clauses exp) (cdr exp))
-
