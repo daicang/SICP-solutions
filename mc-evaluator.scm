@@ -1,6 +1,8 @@
 ;; Meta-circular evaluator
 
-; environment
+;; Environment
+
+(define the-empty-environment '())
 
 (define (enclosing-environment env) (cdr env))
 
@@ -23,6 +25,24 @@
 	  (error "Too many arguments supplied" vars vals)
 	  (error "Too few arguments supplied" vars vals))))
 
+(define (setup-environment)
+  (let ((initial-env
+	 (extend-environment (primitive-procedure-names)
+			     (primitive-procedure-objects)
+			     the-empty-environment)))
+    (define-variable! 'true true initial-env)
+    (define-variable! 'false false initial-env)
+    initial-env))
+
+(define the-global-environment (setup-environment))
+
+
+;; Primitives
+(define (primitive-procedure? proc)
+  (tagged-list? proc 'primitive))
+
+(define (primitive-implementation proc) (cadr proc))
+
 (define (primitive-procedure-names)
   (map car primitive-procedures))
 
@@ -41,14 +61,12 @@
 	 (list 'primitive (cadr proc)))
        primitive-procedures))
 
-(define the-empty-environment '())
-
 ;; define-variable!
 ;; 1. defines variable and its value in first frame of the environment
 ;; 2. or, if variable exists in first frame, change its value.
 ;;
-;; Currently it only modifies first frame.
-;; *TODO*
+;; Currently it only modifies first frame, as it should. We should
+;; always search the first frame first.
 
 (define (define-variable! var val env)
   (let ((frame (first-frame env)))
@@ -61,21 +79,6 @@
     (scan (frame-variables frame)
 	  (frame-values frame))))
 
-;; setup-environment
-;;
-;; Sets initial environment, including primitives and true/false.
-
-(define (setup-environment)
-  (let ((initial-env
-	 (extend-environment (primitive-procedure-names)
-			     (primitive-procedure-objects)
-			     the-empty-environment)))
-    (define-variable! 'true true initial-env)
-    (define-variable! 'false false initial-env)
-    initial-env))
-
-(define the-global-environment (setup-environment))
-
 ;; make-procedure
 ;;
 ;; Simply add 'procedure tag.
@@ -84,7 +87,7 @@
 (define (make-procedure parameters body env)
   (list 'procedure parameters body env))
 
-(define apply-in-underlying-scheme apply)
+
 
 (define (my-compound-procedure? p) (tagged-list? p 'procedure))
 
@@ -109,12 +112,14 @@
 	  (scan (frame-variables frame) (frame-values frame)))))
   (env-loop env))
 
+;; Eval the argument of a function call.
 (define (list-of-values exps env)
   (if (no-operands? exps)
       '()
       (cons (eval (first-operand exps) env)
 	    (list-of-values (rest-operands exps) env))))
 
+;; eval helper functions
 (define (eval-if exp env)
   (if (true? (eval (if-predicate exp) env))
       (eval (if-consequent exp) env)
@@ -137,10 +142,11 @@
     env)
   'ok)
 
+;; utilities
 (define (self-evaluating? exp)
-  (cond ((number? exp) true)
-	((string? exp) true)
-	(else false)))
+  (cond ((number? exp) #t)
+	((string? exp) #t)
+	(else #f)))
 
 (define (variable? exp) (symbol? exp))
 
@@ -152,7 +158,7 @@
 (define (tagged-list? exp tag)
   (if (pair? exp)
       (eq? (car exp) tag)
-      false))
+      #f))
 
 (define (assignment? exp)
   (tagged-list? exp 'set!))
@@ -163,6 +169,7 @@
 
 (define (definition? exp) (tagged-list? exp 'define))
 
+;; ('define <variable> <body>) or ('define (<variable> <parameters>) <body>)
 (define (definition-variable exp)
   (if (symbol? (cadr exp))
       (cadr exp)
@@ -170,8 +177,8 @@
 
 (define (definition-value exp)
   (if (symbol? (cadr exp))
-      (caddr exp)
-      (make-lambda (cdadr exp)
+      (caddr exp) ;; Variable definition.
+      (make-lambda (cdadr exp) ;; Function definition, transform it to lambda.
 		   (cddr exp))))
 
 (define (lambda? exp) (tagged-list? exp 'lambda))
@@ -252,7 +259,7 @@
 		     (sequence->exp (cond-actions first))
 		     (expand-clauses rest))))))
 
-;practice 4.6
+;; let
 (define (let? exp) (tagged-list? exp 'let))
 
 (define (let->combination exp)
@@ -275,7 +282,7 @@
       (cons (caar clauses)
 	    (let-variables (cdr clauses)))))
 
-; practice 4.7
+;; let*, in practice 4.7
 (define (let*? exp) (tagged-list? exp 'let*))
 
 (define (let*->nested-lets exp)
@@ -296,10 +303,11 @@
 (define (rest-clauses clauses) (cdr clauses))
 
 ; 4.1.3
-(define (true? x) (not (eq? x false)))
+(define (true? x) (not (eq? x #f)))
 
-(define (false? x) (eq? x false))
+(define (false? x) (eq? x #f))
 
+;; Called by eval-assignment.
 (define (set-variable-value! var val env)
   (define (env-loop env)
     (define (scan vars vals)
@@ -314,15 +322,15 @@
 	  (scan (frame-variables frame) (frame-values frame)))))
   (env-loop env))
 
-(define (primitive-procedure? proc)
-  (tagged-list? proc 'primitive))
 
-(define (primitive-implementation proc) (cadr proc))
-
+;; apply helper function
 (define (apply-primitive-procedure proc args)
   (apply-in-underlying-scheme
    (primitive-implementation proc) args))
 
+(define apply-in-underlying-scheme apply)
+
+;; I/O
 (define input-prompt ";;; M-Eval input:")
 
 (define output-prompt ";;; M-Eval value:")
@@ -350,6 +358,8 @@
 		     (procedure-parameters object)
 		     (procedure-body object)))
       (display object)))
+
+;; eval/apply
 
 (define (eval exp env)
   (cond ((self-evaluating? exp) exp)
